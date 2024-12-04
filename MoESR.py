@@ -1,4 +1,5 @@
 import math
+from typing import Literal
 
 import torch
 from torch import nn, Tensor
@@ -110,7 +111,9 @@ class Upsample(nn.Sequential):
 
     """
 
-    def __init__(self, in_dim, num_feat, out_dim, scale):
+    def __init__(
+        self, in_dim: int = 64, num_feat: int = 64, out_dim: int = 3, scale: int = 4
+    ):
         m = [nn.Conv2d(in_dim, num_feat, 3, 1, 1), nn.LeakyReLU(inplace=True)]
         if (scale & (scale - 1)) == 0:  # scale = 2^n
             for _ in range(int(math.log2(scale))):
@@ -171,7 +174,7 @@ class InterpolateUpsampler(nn.Sequential):
 
 
 class CFFT(nn.Module):
-    def __init__(self, dim, expansion_factor):
+    def __init__(self, dim: int = 64, expansion_factor: float = 1.5):
         super(CFFT, self).__init__()
 
         self.dim = dim
@@ -200,7 +203,7 @@ class CFFT(nn.Module):
 
 
 class LayerNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int = 64, eps: float = 1e-6):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
         self.bias = nn.Parameter(torch.zeros(dim))
@@ -221,9 +224,9 @@ class ESA(nn.Module):
     are deleted.
     """
 
-    def __init__(self, dim, head_f=0.25):
+    def __init__(self, dim, expansion_esa=0.25):
         super(ESA, self).__init__()
-        f = int(dim * head_f)
+        f = int(dim * expansion_esa)
         self.conv1 = nn.Conv2d(dim, f, kernel_size=1)
         self.conv_f = nn.Conv2d(f, f, kernel_size=1)
         self.conv2 = nn.Conv2d(f, f, kernel_size=3, stride=2, padding=0)
@@ -233,7 +236,7 @@ class ESA(nn.Module):
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
-        _B, _C, H, W = x.size
+        _B, _C, H, W = x.shape
         c1_ = self.conv1(x)
         c1 = self.conv2(c1_)
         v_max = F.max_pool2d(c1, kernel_size=7, stride=3)
@@ -262,7 +265,7 @@ class GatedCNNBlock(nn.Module):
 
     def __init__(
         self,
-        dim: int,
+        dim: int = 64,
         expansion_ratio: float = 1.5,
         conv_ratio: float = 1.0,
         kernel_size: int = 7,
@@ -305,10 +308,10 @@ class GatedCNNBlock(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim: int = 64, expansion_factor: float = 1.5):
         super().__init__()
-        self.token_mix = GatedCNNBlock(dim)
-        self.ffn = nn.Sequential(LayerNorm(dim, eps=1e-6), CFFT(dim, 1.5))
+        self.token_mix = GatedCNNBlock(dim, expansion_factor)
+        self.ffn = nn.Sequential(LayerNorm(dim, eps=1e-6), CFFT(dim, expansion_factor))
         self.gamma = nn.Parameter(torch.ones([1, dim, 1, 1]), requires_grad=True)
         self.se = SSELayer(dim)
 
@@ -319,9 +322,18 @@ class Block(nn.Module):
 
 
 class Blocks(nn.Module):
-    def __init__(self, dim, blocks=4):
+    def __init__(
+        self,
+        dim: int = 64,
+        blocks: int = 4,
+        expansion_factor: float = 1.5,
+        expansion_esa: float = 0.25,
+    ):
         super().__init__()
-        self.blocks = nn.Sequential(*[Block(dim) for _ in range(blocks)] + [ESA(dim)])
+        self.blocks = nn.Sequential(
+            *[Block(dim, expansion_factor) for _ in range(blocks)]
+            + [ESA(dim, expansion_esa)]
+        )
         self.gamma = nn.Parameter(torch.ones(1, dim, 1, 1), requires_grad=True)
 
     def forward(self, x):
@@ -333,23 +345,31 @@ class MoESR(nn.Module):
 
     def __init__(
         self,
-        in_ch=3,
-        out_ch=3,
-        scale=4,
-        dim=64,
-        n_blocks=6,
-        n_block=6,
-        upsampler="n+c",  # n+c psd ps dys conv
-        upsample_dim=64,
+        in_ch: int = 3,
+        out_ch: int = 3,
+        scale: int = 4,
+        dim: int = 64,
+        n_blocks: int = 6,
+        n_block: int = 6,
+        expansion_factor: int = 1.5,
+        expansion_esa: int = 0.25,
+        upsampler: Literal["n+c", "psd", "ps", "dys", "conv"] = "n+c",
+        upsample_dim: int = 64,
     ):
         super().__init__()
+
         self.in_to_dim = nn.Conv2d(in_ch, dim, 3, 1, 1)
-        self.blocks = nn.Sequential(*[Blocks(dim, n_block) for _ in range(n_blocks)])
+        self.blocks = nn.Sequential(
+            *[
+                Blocks(dim, n_block, expansion_factor, expansion_esa)
+                for _ in range(n_blocks)
+            ]
+        )
         if upsampler == "n+c":
             self.upscale = InterpolateUpsampler(dim, out_ch, scale)
         elif upsampler == "psd":
             self.upscale = nn.Sequential(
-                nn.Conv2d(64, 3 * 4 * 4, 3, 1, 1), nn.PixelShuffle(scale)
+                nn.Conv2d(64, 3 * scale * scale, 3, 1, 1), nn.PixelShuffle(scale)
             )
         elif upsampler == "ps":
             self.upscale = Upsample(dim, upsample_dim, out_ch, scale)
@@ -358,7 +378,7 @@ class MoESR(nn.Module):
         elif upsampler == "conv":
             self.upscale = nn.Conv2d(dim, out_ch, 3, 1, 1)
         self.register_buffer(
-            "meta", torch.tensor([in_ch, out_ch, scale], dtype=torch.uint8)
+            "metadata", torch.tensor([in_ch, out_ch, scale], dtype=torch.uint8)
         )
         self.gamma = nn.Parameter(torch.ones(1, 64, 1, 1), requires_grad=True)
 
