@@ -14,7 +14,8 @@ Special thanks to **[the-database](https://github.com/the-database)** for conduc
 - **LQ size:** 64  
 - **EMA:** 0.999  
 - **Loss function:** MS-SSIM_L1  
-Val set: Urban100
+- **Val set:** Urban100
+- **Train set:** DF2k
 ```mermaid
 xychart-beta
     title "B: MoESR vs ESRGAN"
