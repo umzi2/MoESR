@@ -27,7 +27,7 @@ xychart-beta
 |model_name|psnr|ssim|
 |-|-|-|
 |ESRGAN|26.98|0.8151|
-|MoESR|**27.05**|0.8176|
+|MoESR|**27.05**|**0.8176**|
 
 pretrain safetensors - [original](https://github.com/the-database/traiNNer-redux/releases/download/pretrained-models/4x_DF2K_MoESR_500k.safetensors)
 
