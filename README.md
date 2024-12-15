@@ -25,10 +25,10 @@ xychart-beta
     line [0.7562176585197449, 0.8062689304351807, 0.8118854761123657, 0.8150879740715027, 0.8162787556648254, 0.8170512914657593, 0.8173067569732666, 0.8174617290496826, 0.8176395893096924, 0.8176536560058594, 0.8176558017730713]
 
 ```
-|model_name|psnr|ssim|
-|-|-|-|
-|ESRGAN|26.98|0.8151|
-|MoESR|**27.05**|**0.8176**|
+|model_name|psnr|ssim|fps 640x480|vram 640x480|
+|-|-|-|-|-|
+|ESRGAN|26.98|0.8151|3.34|2.50 GB|
+|MoESR|**27.05**|**0.8176**|4.02|0.93 GB|
 
 pretrain safetensors - [original](https://github.com/the-database/traiNNer-redux/releases/download/pretrained-models/4x_DF2K_MoESR_500k.safetensors)
 
